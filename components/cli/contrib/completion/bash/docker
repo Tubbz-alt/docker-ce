@@ -1809,6 +1809,7 @@ _docker_container_run_and_create() {
 		--dns
 		--dns-option
 		--dns-search
+		--domainname
 		--entrypoint
 		--env -e
 		--env-file
