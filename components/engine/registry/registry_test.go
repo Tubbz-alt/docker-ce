@@ -665,7 +665,32 @@ func TestNewIndexInfo(t *testing.T) {
 }
 
 func TestMirrorEndpointLookup(t *testing.T) {
+	var (
+		secReg           registrytypes.Registry
+		config           *serviceConfig
+		pushAPIEndpoints []APIEndpoint
+		pullAPIEndpoints []APIEndpoint
+		err              error
+	)
+
 	skip.If(t, os.Getuid() != 0, "skipping test that requires root")
+
+	// secure with mirrors
+	secReg, err = registrytypes.NewRegistry("https://secure.registry.com/test-prefix/")
+	secMirrors := []string{"https://secure.mirror1.com/", "https://secure.mirror2.com/"}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secReg.AddMirror(secMirrors[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := secReg.AddMirror(secMirrors[1]); err != nil {
+		t.Fatal(err)
+	}
+
+	// docker.io mirrors to test backwards compatibility
+	officialMirrors := []string{"https://official.mirror1.com/", "https://official.mirror2.com/"}
+
 	containsMirror := func(endpoints []APIEndpoint) bool {
 		for _, pe := range endpoints {
 			if pe.URL.Host == "my.mirror" {
@@ -674,30 +699,82 @@ func TestMirrorEndpointLookup(t *testing.T) {
 		}
 		return false
 	}
-	cfg, err := makeServiceConfig([]string{"https://my.mirror"}, nil)
+	cfg, err := makeServiceConfig(officialMirrors, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := DefaultService{config: cfg}
 
-	imageName, err := reference.WithName(IndexName + "/test/image")
-	if err != nil {
-		t.Error(err)
-	}
-	pushAPIEndpoints, err := s.LookupPushEndpoints(reference.Domain(imageName))
+	// lookups for "docker.io"
+	officialRef := "docker.io/test/image:latest"
+	pushAPIEndpoints, err = s.LookupPushEndpoints(officialRef)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if containsMirror(pushAPIEndpoints) {
+	if containsMirror(officialMirrors[0], pushAPIEndpoints) {
+		t.Fatal("Push endpoint should not contain mirror")
+	}
+	if containsMirror(officialMirrors[1], pushAPIEndpoints) {
 		t.Fatal("Push endpoint should not contain mirror")
 	}
 
-	pullAPIEndpoints, err := s.LookupPullEndpoints(reference.Domain(imageName))
+	pullAPIEndpoints, err = s.LookupPullEndpoints(officialRef)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsMirror(pullAPIEndpoints) {
+	if !containsMirror(officialMirrors[0], pullAPIEndpoints) {
 		t.Fatal("Pull endpoint should contain mirror")
+	}
+	if !containsMirror(officialMirrors[1], pullAPIEndpoints) {
+		t.Fatal("Pull endpoint should contain mirror")
+	}
+
+	// prefix lookups
+	prefixRef := "secure.registry.com/test-prefix/foo:latest"
+	pushAPIEndpoints, err = s.LookupPushEndpoints(prefixRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsMirror(secMirrors[0], pushAPIEndpoints) {
+		t.Fatal("Push endpoint should not contain mirror")
+	}
+	if containsMirror(secMirrors[1], pushAPIEndpoints) {
+		t.Fatal("Push endpoint should not contain mirror")
+	}
+
+	pullAPIEndpoints, err = s.LookupPullEndpoints(prefixRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsMirror(secMirrors[0], pullAPIEndpoints) {
+		t.Fatal("Pull endpoint should contain mirror")
+	}
+	if !containsMirror(secMirrors[1], pullAPIEndpoints) {
+		t.Fatal("Pull endpoint should contain mirror")
+	}
+
+	// lookups without matching prefix -> no mirrors
+	noPrefixRef := "secure.registry.com/no-matching-prefix/foo:latest"
+	pushAPIEndpoints, err = s.LookupPushEndpoints(noPrefixRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsMirror(secMirrors[0], pushAPIEndpoints) {
+		t.Fatal("Push endpoint should not contain mirror")
+	}
+	if containsMirror(secMirrors[1], pushAPIEndpoints) {
+		t.Fatal("Push endpoint should not contain mirror")
+	}
+
+	pullAPIEndpoints, err = s.LookupPullEndpoints(noPrefixRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsMirror(secMirrors[0], pullAPIEndpoints) {
+		t.Fatal("Pull endpoint should not contain mirror")
+	}
+	if containsMirror(secMirrors[1], pullAPIEndpoints) {
+		t.Fatal("Pull endpoint should not contain mirror")
 	}
 }
 
