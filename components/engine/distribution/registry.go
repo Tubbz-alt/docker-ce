@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/docker/distribution"
@@ -60,6 +63,7 @@ func NewV2Repository(ctx context.Context, repoInfo *registry.RepositoryInfo, end
 	if endpoint.TrimHostname {
 		repoName = reference.Path(repoInfo.Name)
 	}
+	repoName = strings.TrimPrefix(path.Join(endpoint.URL.RequestURI(), repoName), "/")
 
 	direct := &net.Dialer{
 		Timeout:   30 * time.Second,
@@ -85,7 +89,15 @@ func NewV2Repository(ctx context.Context, repoInfo *registry.RepositoryInfo, end
 	modifiers := registry.DockerHeaders(dockerversion.DockerUserAgent(ctx), metaHeaders)
 	authTransport := transport.NewTransport(base, modifiers...)
 
-	challengeManager, foundVersion, err := registry.PingV2Registry(endpoint.URL, authTransport)
+	regURL, err := url.Parse(fmt.Sprintf("%s://%s", endpoint.URL.Scheme, endpoint.URL.Host))
+	if err != nil {
+		return nil, foundVersion, fallbackError{
+			err:         err,
+			confirmedV2: foundVersion,
+			transportOK: false,
+		}
+	}
+	challengeManager, foundVersion, err := registry.PingV2Registry(regURL, authTransport)
 	if err != nil {
 		transportOK := false
 		if responseErr, ok := err.(registry.PingResponseError); ok {
@@ -108,7 +120,6 @@ func NewV2Repository(ctx context.Context, repoInfo *registry.RepositoryInfo, end
 			Actions:    actions,
 			Class:      repoInfo.Class,
 		}
-
 		creds := registry.NewStaticCredentialStore(authConfig)
 		tokenHandlerOptions := auth.TokenHandlerOptions{
 			Transport:   authTransport,
@@ -131,7 +142,7 @@ func NewV2Repository(ctx context.Context, repoInfo *registry.RepositoryInfo, end
 		}
 	}
 
-	repo, err = client.NewRepository(ctx, repoNameRef, endpoint.URL.String(), tr)
+	repo, err = client.NewRepository(ctx, repoNameRef, regURL.String(), tr)
 	if err != nil {
 		err = fallbackError{
 			err:         err,
