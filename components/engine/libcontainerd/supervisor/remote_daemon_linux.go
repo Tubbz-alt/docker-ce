@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	sockFile      = "containerd.sock"
-	debugSockFile = "containerd-debug.sock"
+	sockFile      = "docker-containerd.sock"
+	debugSockFile = "docker-containerd-debug.sock"
 )
 
 func (r *remote) setDefaults() {
