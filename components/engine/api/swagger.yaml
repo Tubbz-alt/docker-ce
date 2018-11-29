@@ -3980,10 +3980,10 @@ definitions:
           $ref: "#/definitions/Runtime"
         default:
           runc:
-            path: "runc"
+            path: "docker-runc"
         example:
           runc:
-            path: "runc"
+            path: "docker-runc"
           runc-master:
             path: "/go/bin/runc"
           custom:
